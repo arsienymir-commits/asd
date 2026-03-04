@@ -1,114 +1,344 @@
-# Permissions Guide – Paano Ma-Access ang Mga Feature
+# Permissions Guide – Per Route
 
-Ito ang gabay kung **anong permission ang kailangan i-allow** para ma-access ng isang user/role ang isang feature (hal. PDF Signer, download, Update Status, atbp.).
+Para ma-access ang isang page o action, kailangan ng **role** ng user na may **permission** na nakalagay sa table sa baba. Ang permission string ay **`segment1/segment2`** ng URL (hal. `procurementpending/sign-pdf-form`).
 
----
-
-## Paano Gumagana ang Permissions
-
-- Bawat **route** sa app ay may **permission string** (hal. `procurementpending/update-status-form`).
-- Ang **role** ng user (hal. BAC Secretariat, Admin) ay may listahan ng **permissions** sa table `permissions`.
-- Kapag pumasok ang user sa isang page o nag-click ng action (download, sign PDF, etc.), chine-check ng **Rbac middleware** kung may permission ang role niya para sa **page_path** na iyon.
-- Kung **wala**, lalabas ang "Forbidden" o "You do not have permission to download this document."
-
-**Para ma-access ang isang feature:** kailangan naka-**Add** o naka-**assign** ang tamang **permission** sa **role** ng user (sa **Settings → Roles → [Role] → Permissions**, o sa **Permissions** list → Add/Edit).
+**Paano mag-add ng permission:** Settings → Permissions → Add (o Roles → [Role] → Permissions). Ilagay ang **Permission** (exact string) at piliin ang **Role Id**. Pagkatapos, **logout at login** ang user.
 
 ---
 
-## Paano Mag-Allow ng Permission sa Isang Role
+## Home
 
-1. **Login** bilang user na may access sa **Permissions** (hal. Admin).
-2. Pumunta sa **Settings → User Settings → Roles** (o direct sa **Permissions** kung naka-link sa menu).
-3. **Para mag-add ng bagong permission para sa isang role:**
-   - Pumunta sa **Permissions** list at click **Add**, **o**
-   - Pumunta sa **Roles → [Piliin ang Role] → Permissions** at i-add doon.
-4. Sa form:
-   - **Permission** – ilagay ang **exact permission string** (tingnan sa table sa ibaba). Hal: `procurementpending/update-status-form`
-   - **Role Id** – piliin ang **role** (hal. BAC Secretariat).
-5. **Save / Update**.
-6. **Logout at login ulit** ang user (o mag-clear cache) para ma-apply ang bagong permission.
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET home` | Home / dashboard | `home/index` |
+| `GET home/tracking-status/{id}` | Tracking status ng project | `home/tracking-status` |
+| `GET home/assigned-tasks-ajax` | AJAX: assigned tasks | `home/assigned-tasks-ajax` |
+| `GET home/member-dashboard-ajax` | AJAX: member dashboard | `home/member-dashboard-ajax` |
 
 ---
 
-## Permission per Feature (Anong I-Allow para Ma-Access)
+## Procurement Pending (at Update Status / PDF Signer / Download)
 
-### Procurement Pending / Update Status / PDF Signer / Downloads
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET procurementpending` | List ng procurement pending | `procurementpending/index` |
+| `GET procurementpending/my-tasks` | My Tasks page | `procurementpending/my-tasks` |
+| `GET procurementpending/view/{id}` | View isang pending record | `procurementpending/view` |
+| `GET procurementpending/add` | Add form | `procurementpending/add` |
+| `POST procurementpending/add` | Save new pending | `procurementpending/add` |
+| `GET procurementpending/edit/{id}` | Edit form | `procurementpending/edit` |
+| `POST procurementpending/edit/{id}` | Save edit | `procurementpending/edit` |
+| `GET procurementpending/delete/{id}` | Delete | `procurementpending/delete` |
+| **`GET procurementpending/update-status-form/{id}`** | **Update Status form (page)** | **`procurementpending/update-status-form`** |
+| **`POST procurementpending/update-status-form/{id}`** | **Submit update status** | **`procurementpending/update-status-form`** |
+| `GET procurementpending/tracking-status-ajax/{id}` | AJAX tracking status | `procurementpending/tracking-status-ajax` |
+| **`GET procurementpending/sign-pdf-form/{id}`** | **PDF Signer page (Open PDF Signer)** | **`procurementpending/sign-pdf-form`** *(o automatic kung may `procurementpending/update-status-form`)* |
+| **`GET procurementpending/sign-pdf-preview/{id}`** | **PDF sign preview** | **`procurementpending/sign-pdf-preview`** *(o automatic kung may `update-status-form`)* |
+| **`POST procurementpending/sign-pdf/{id}`** | **I-submit ang signature sa PDF** | **`procurementpending/sign-pdf`** *(o automatic kung may `update-status-form`)* |
+| `GET procurementpending/sign-pdf-preview-position/{id}` | Preview position (internal) | Same as sign-pdf-form / update-status-form |
+| `GET procurementpending/sign-pdf-match-image/{id}` | Match image (internal) | Same as sign-pdf-form / update-status-form |
+| `GET procurementpending/sign-pdf-matches/{id}` | Sign PDF matches | Same as sign-pdf-form / update-status-form |
+| **`GET procurementpending/download-rfq/{id}`** | **Download RFQ file** | **`procurementpending/download-rfq`** *(o automatic kung may `procurementpending/update-status-form`)* |
+| **`GET procurementpending/download-award/{id}`** | **Download Award file** | **`procurementpending/download-award`** *(o automatic kung may `update-status-form`)* |
+| **`GET procurementpending/download-attachment/{id}`** | **Download attachment** | **`procurementpending/download-attachment`** *(o automatic kung may `update-status-form`)* |
+| `POST procurementpending/approve-rfq/{id}` | Approve RFQ | `procurementpending/approve-rfq` |
 
-| Gustong ma-access              | Permission na i-allow                         | Notes |
-|--------------------------------|-----------------------------------------------|--------|
-| **Update Status** (form)      | `procurementpending/update-status-form`       | Kailangan ito para makapasok sa "Update Status - Procurement Pending" at makita ang form. |
-| **PDF Signer** (Open PDF Signer)| *Automatic kapag may* `procurementpending/update-status-form` | Hindi na kailangan i-add ang `sign-pdf-form` kung may **Update Status** permission na. Kung wala kang update-status-form, i-allow: `procurementpending/sign-pdf-form`. |
-| **Download attachment** (sa Update Status)| *Automatic kapag may* `procurementpending/update-status-form` | Kung wala, i-allow: `procurementpending/download-attachment`. |
-| **Download RFQ**               | *Automatic kapag may* `procurementpending/update-status-form` | O i-allow: `procurementpending/download-rfq`. |
-| **Download Award**            | *Automatic kapag may* `procurementpending/update-status-form` | O i-allow: `procurementpending/download-award`. |
-| **Procurement Pending list**   | `procurementpending/index`                    | Para makita ang list at My Tasks. |
-| **View / Add / Edit / Delete** | `procurementpending/view`, `procurementpending/add`, `procurementpending/edit`, `procurementpending/delete` | Ayon sa kung ano ang kailangan ng role. |
+**Halimbawa:** Para makapag-**sign ng PDF**, kailangan mo ng permission na **`procurementpending/sign-pdf-form`**. Kung may **`procurementpending/update-status-form`** ka na (para sa Update Status page), pwede ka na ring mag-open ng PDF Signer at mag-download nang walang hiwalay na permission.
 
-**Halimbawa (BAC Secretariat):**  
-Para ma-access **lahat** ng nasa Update Status page (form, PDF Signer, download ng attachment/RFQ/award), **sapat na** ang isang permission:
+---
+
+## Procurement Projects
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET procurementprojects` | Projects list | `procurementprojects/index` |
+| `GET procurementprojects/archive` | Archive list | `procurementprojects/archive` |
+| `GET procurementprojects/restore/{id}` | Restore from archive | `procurementprojects/restore` |
+| `GET procurementprojects/view/{id}` | View project | `procurementprojects/view` |
+| `GET procurementprojects/add` | Add project form | `procurementprojects/add` |
+| `POST procurementprojects/add` | Save new project | `procurementprojects/add` |
+| `GET procurementprojects/edit/{id}` | Edit project | `procurementprojects/edit` |
+| `POST procurementprojects/edit/{id}` | Save edit | `procurementprojects/edit` |
+| `GET procurementprojects/delete/{id}` | Delete project | `procurementprojects/delete` |
+| `GET procurementprojects/download-rfq/{id}/{fileIndex?}` | Download RFQ file | `procurementprojects/download-rfq` |
+| `GET procurementprojects/tracking-status-ajax/{id}` | AJAX tracking | `procurementprojects/tracking-status-ajax` |
+
+---
+
+## Procurement Steps
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET procurementsteps` | Steps list | `procurementsteps/index` |
+| `GET procurementsteps/view/{id}` | View step | `procurementsteps/view` |
+| `GET procurementsteps/add` | Add step | `procurementsteps/add` |
+| `POST procurementsteps/add` | Save step | `procurementsteps/add` |
+| `GET procurementsteps/edit/{id}` | Edit step | `procurementsteps/edit` |
+| `POST procurementsteps/edit/{id}` | Save edit | `procurementsteps/edit` |
+| `GET procurementsteps/delete/{id}` | Delete step | `procurementsteps/delete` |
+| `GET procurementsteps/download-document/{step_id}` | Download step document | `procurementsteps/download-document` |
+
+---
+
+## Project Step Status
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET projectstepstatus` | List | `projectstepstatus/index` |
+| `GET projectstepstatus/view/{id}` | View | `projectstepstatus/view` |
+| `GET projectstepstatus/add` | Add | `projectstepstatus/add` |
+| `POST projectstepstatus/add` | Store | `projectstepstatus/add` |
+| `GET projectstepstatus/edit/{id}` | Edit | `projectstepstatus/edit` |
+| `POST projectstepstatus/edit/{id}` | Update | `projectstepstatus/edit` |
+| `GET projectstepstatus/delete/{id}` | Delete | `projectstepstatus/delete` |
+
+---
+
+## Project Step Movements
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET projectstepmovements` | List | `projectstepmovements/index` |
+| `GET projectstepmovements/view/{id}` | View | `projectstepmovements/view` |
+| `GET projectstepmovements/add` | Add | `projectstepmovements/add` |
+| `POST projectstepmovements/add` | Store | `projectstepmovements/add` |
+| `GET projectstepmovements/edit/{id}` | Edit | `projectstepmovements/edit` |
+| `POST projectstepmovements/edit/{id}` | Update | `projectstepmovements/edit` |
+| `GET projectstepmovements/delete/{id}` | Delete | `projectstepmovements/delete` |
+
+---
+
+## PPMP
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET ppmp` | PPMP list | `ppmp/index` |
+| `GET ppmp/archive` | Archive | `ppmp/archive` |
+| `GET ppmp/restore/{id}` | Restore | `ppmp/restore` |
+| `GET ppmp/view/{id}` | View PPMP | `ppmp/view` |
+| `GET ppmp/add` | Add PPMP | `ppmp/add` |
+| `POST ppmp/add` | Store | `ppmp/add` |
+| `GET ppmp/edit/{id}` | Edit PPMP | `ppmp/edit` |
+| `POST ppmp/update/{id}` | Update | `ppmp/edit` (same path segment) |
+| `GET ppmp/delete/{id}` | Delete | `ppmp/delete` |
+| `GET ppmp/export-excel/{id}` | Export Excel | `ppmp/export-excel` |
+| `GET ppmp/export-full-excel` | Full Excel export | `ppmp/export-full-excel` |
+| `GET ppmp/bulk-pdf` | Bulk PDF | `ppmp/bulk-pdf` |
+| `POST ppmp/approve/{id}` | Approve | `ppmp/approve` |
+| `POST ppmp/decline/{id}` | Decline | `ppmp/decline` |
+
+*Note: `ppmp/download-attachment` ay withoutMiddleware(['rbac']), walang permission check.*
+
+---
+
+## APP (Annual Procurement Plan)
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET app` | APP list | `app/index` |
+| `GET app/archive` | Archive | `app/archive` |
+| `GET app/restore/{id}` | Restore | `app/restore` |
+| `GET app/view/{id}` | View APP | `app/view` |
+| `GET app/add` | Add APP | `app/add` |
+| `POST app/add` | Store | `app/add` |
+| `GET app/edit/{id}` | Edit APP | `app/edit` |
+| `POST app/update/{id}` | Update | `app/edit` |
+| `GET app/delete/{id}` | Delete | `app/delete` |
+| `GET app/pdf/{id}` | Download PDF | `app/pdf` |
+| `GET app/bulk-pdf` | Bulk PDF | `app/bulk-pdf` |
+| `GET app/export-excel/{id}` | Export Excel | `app/export-excel` |
+| `GET app/export-full-excel` | Full Excel | `app/export-full-excel` |
+
+*Note: `app/download-attachment` ay withoutMiddleware(['rbac']).*
+
+---
+
+## Accounts (User) at Account
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET usertbl` | User list | `usertbl/index` |
+| `GET usertbl/archive` | User archive | `usertbl/archive` |
+| `GET usertbl/restore/{id}` | Restore user | `usertbl/restore` |
+| `GET usertbl/view/{id}` | View user | `usertbl/view` |
+| `GET usertbl/add` | Add user | `usertbl/add` |
+| `POST usertbl/add` | Store user | `usertbl/add` |
+| `GET usertbl/edit/{id}` | Edit user | `usertbl/edit` |
+| `POST usertbl/edit/{id}` | Update user | `usertbl/edit` |
+| `GET usertbl/delete/{id}` | Delete user | `usertbl/delete` |
+| `GET account` | My account / profile | `account/index` |
+| `GET account/edit` | Edit my profile | `account/edit` |
+| `POST account/edit` | Save profile | `account/edit` |
+
+*Note: `account/esign` at `account/esignStore` ay withoutMiddleware(['rbac']) – lahat ng naka-login pwedeng mag-set ng e-signature.*
+
+---
+
+## Roles at Permissions
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET roles` | Roles list | `roles/index` |
+| `GET roles/view/{id}` | View role | `roles/view` |
+| `GET roles/add` | Add role | `roles/add` |
+| `POST roles/add` | Store role | `roles/add` |
+| `GET roles/edit/{id}` | Edit role | `roles/edit` |
+| `POST roles/edit/{id}` | Update role | `roles/edit` |
+| `GET roles/delete/{id}` | Delete role | `roles/delete` |
+| `GET permissions` | Permissions list | `permissions/index` |
+| `GET permissions/view/{id}` | View permission | `permissions/view` |
+| `GET permissions/add` | Add permission | `permissions/add` |
+| `POST permissions/add` | Store permission | `permissions/store` *(segment2 = add para sa GET, store sa POST – check: POST store ay same route add, so permission ay often permissions/add)* |
+| `GET permissions/edit/{id}` | Edit permission | `permissions/edit` |
+| `POST permissions/edit/{id}` | Update permission | `permissions/edit` |
+| `GET permissions/delete/{id}` | Delete permission | `permissions/delete` |
+| `POST permissions/delete/{id}` | Delete (post) | `permissions/delete` |
+
+*Note: Laravel segment(2) for POST to same URL is still the second segment of the path (e.g. edit), so permission stays `permissions/edit`.*
+
+---
+
+## Division
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET division` | Division list | `division/index` |
+| `GET division/view/{id}` | View division | `division/view` |
+| `GET division/add` | Add division | `division/add` |
+| `POST division/add` | Store | `division/add` |
+| `GET division/edit/{id}` | Edit division | `division/edit` |
+| `POST division/edit/{id}` | Update | `division/edit` |
+| `GET division/delete/{id}` | Delete | `division/delete` |
+
+---
+
+## Designation
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET designationtbl` | List | `designationtbl/index` |
+| `GET designationtbl/view/{id}` | View | `designationtbl/view` |
+| `GET designationtbl/add` | Add | `designationtbl/add` |
+| `POST designationtbl/add` | Store | `designationtbl/add` |
+| `GET designationtbl/edit/{id}` | Edit | `designationtbl/edit` |
+| `POST designationtbl/edit/{id}` | Update | `designationtbl/edit` |
+| `GET designationtbl/delete/{id}` | Delete | `designationtbl/delete` |
+
+---
+
+## BAC Teams
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET bacteams` | List | `bacteams/index` |
+| `GET bacteams/view/{id}` | View | `bacteams/view` |
+| `GET bacteams/add` | Add | `bacteams/add` |
+| `POST bacteams/add` | Store | `bacteams/add` |
+| `GET bacteams/edit/{id}` | Edit | `bacteams/edit` |
+| `POST bacteams/edit/{id}` | Update | `bacteams/edit` |
+| `GET bacteams/delete/{id}` | Delete | `bacteams/delete` |
+
+---
+
+## Procurement Categories
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET procurementcategories` | List | `procurementcategories/index` |
+| `GET procurementcategories/view/{id}` | View | `procurementcategories/view` |
+| `GET procurementcategories/add` | Add | `procurementcategories/add` |
+| `POST procurementcategories/add` | Store | `procurementcategories/add` |
+| `GET procurementcategories/edit/{id}` | Edit | `procurementcategories/edit` |
+| `POST procurementcategories/edit/{id}` | Update | `procurementcategories/edit` |
+| `GET procurementcategories/delete/{id}` | Delete | `procurementcategories/delete` |
+
+---
+
+## Project Type
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET projecttype` | List | `projecttype/index` |
+| `GET projecttype/view/{id}` | View | `projecttype/view` |
+| `GET projecttype/add` | Add | `projecttype/add` |
+| `POST projecttype/add` | Store | `projecttype/add` |
+| `GET projecttype/edit/{id}` | Edit | `projecttype/edit` |
+| `POST projecttype/edit/{id}` | Update | `projecttype/edit` |
+| `GET projecttype/delete/{id}` | Delete | `projecttype/delete` |
+
+---
+
+## Signatories (RFQ, PPMP, APP, Award)
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET rfqsignatory` | RFQ Signatory list | `rfqsignatory/index` |
+| `GET rfqsignatory/view/{id}` | View | `rfqsignatory/view` |
+| `GET rfqsignatory/add` | Add | `rfqsignatory/add` |
+| `POST rfqsignatory/add` | Store | `rfqsignatory/add` |
+| `GET rfqsignatory/edit/{id}` | Edit | `rfqsignatory/edit` |
+| `GET rfqsignatory/delete/{id}` | Delete | `rfqsignatory/delete` |
+| `GET ppmpsignatory` | PPMP Signatory list | `ppmpsignatory/index` |
+| `GET ppmpsignatory/view/{id}` | View | `ppmpsignatory/view` |
+| `GET ppmpsignatory/add` | Add | `ppmpsignatory/add` |
+| … (edit, delete) | … | `ppmpsignatory/edit`, `ppmpsignatory/delete` |
+| `GET appsignatory` | APP Signatory list | `appsignatory/index` |
+| … | View/Add/Edit/Delete | `appsignatory/view`, `appsignatory/add`, `appsignatory/edit`, `appsignatory/delete` |
+| `GET awardsignatory` | Award Signatory list | `awardsignatory/index` |
+| … | View/Add/Edit/Delete | `awardsignatory/view`, `awardsignatory/add`, `awardsignatory/edit`, `awardsignatory/delete` |
+
+---
+
+## Procurement Process
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET procurementprocess` | List | `procurementprocess/index` |
+| `GET procurementprocess/view/{id}` | View | `procurementprocess/view` |
+| `GET procurementprocess/add` | Add | `procurementprocess/add` |
+| `POST procurementprocess/add` | Store | `procurementprocess/add` |
+| `GET procurementprocess/edit/{id}` | Edit | `procurementprocess/edit` |
+| `GET procurementprocess/delete/{id}` | Delete | `procurementprocess/delete` |
+
+---
+
+## Reports at Activity / Security
+
+| Route (URL pattern) | Ginagawa | Permission na kailangan |
+|---------------------|----------|-------------------------|
+| `GET activitylog` | Activity Log list | `activitylog/index` |
+| `GET procurementreport` | Procurement Report | `procurementreport/index` |
+| `GET securityauditlog` | Security Audit Log | `securityauditlog/index` |
+| `GET securityauditlog/view/{id}` | View log | `securityauditlog/view` |
+| `GET securityauditlog/export` | Export | `securityauditlog/export` |
+
+---
+
+## Special Rule (Rbac)
+
+- **Kung may `procurementpending/update-status-form`** ang role, automatic na pwedeng i-access (walang hiwalay na permission) ang:
+  - `procurementpending/sign-pdf-form`
+  - `procurementpending/sign-pdf-preview`
+  - `procurementpending/sign-pdf`
+  - `procurementpending/sign-pdf-match-image`, `sign-pdf-preview-position`, `sign-pdf-matches`
+  - `procurementpending/download-rfq`
+  - `procurementpending/download-award`
+  - `procurementpending/download-attachment`
+
+---
+
+## Quick Example: PDF Sign
+
+**Para makapag-sign ng PDF**, kailangan mo ng permission na:
+
+- **`procurementpending/sign-pdf-form`**
+
+O kung may **Update Status** permission ka na:
 
 - **`procurementpending/update-status-form`**
 
-Hindi na kailangan i-add nang hiwalay ang:  
-`procurementpending/sign-pdf-form`, `procurementpending/download-attachment`, `procurementpending/download-rfq`, `procurementpending/download-award` (unless gusto mo silang i-allow kahit walang Update Status).
+— enough na iyon; pwede ka nang mag-open ng PDF Signer at mag-submit ng signature.
 
 ---
 
-### Ibang Modules (List / View / Add / Edit / Delete)
-
-Format: `module/action`. Halimbawa:
-
-| Module / feature   | Permission strings (i-allow depende sa kailangan) |
-|--------------------|---------------------------------------------------|
-| **Home**           | `home/index`                                      |
-| **My Tasks**       | `procurementpending/my-tasks`                     |
-| **Procurement Projects** | `procurementprojects/index`, `procurementprojects/view`, `procurementprojects/add`, `procurementprojects/edit`, `procurementprojects/delete` |
-| **Procurement Steps**    | `procurementsteps/index`, `procurementsteps/view`, `procurementsteps/add`, `procurementsteps/edit`, `procurementsteps/delete` |
-| **PPMP**           | `ppmp/index`, `ppmp/view`, `ppmp/add`, `ppmp/edit`, `ppmp/delete` |
-| **APP**            | `app/index`, `app/view`, `app/add`, `app/edit`, `app/delete` |
-| **Accounts (User)**| `usertbl/index`, `usertbl/view`, `usertbl/add`, `usertbl/edit`, `usertbl/delete` |
-| **Roles**          | `roles/index`, `roles/view`, `roles/add`, `roles/edit`, `roles/delete` |
-| **Permissions**    | `permissions/index`, `permissions/view`, `permissions/add`, `permissions/edit`, `permissions/delete` |
-| **Division**       | `division/index`, `division/view`, `division/add`, `division/edit`, `division/delete` |
-| **Designation**    | `designationtbl/index`, `designationtbl/view`, `designationtbl/add`, `designationtbl/edit`, `designationtbl/delete` |
-| **BAC Teams**      | `bacteams/index`, `bacteams/view`, `bacteams/add`, `bacteams/edit`, `bacteams/delete` |
-| **Activity Log**   | `activitylog/index`                               |
-| **Account (profile)** | `account/index`, `account/edit`                 |
-| **E-Signature (account)** | Walang Rbac; lahat ng naka-login ay maaaring mag-set ng e-signature. |
-
----
-
-## Special Rules (Naka-program sa Rbac)
-
-- **May `procurementpending/update-status-form` na:**  
-  Pwede na ring ma-access nang **walang hiwalay na permission** ang:
-  - PDF Signer: `procurementpending/sign-pdf-form`, `procurementpending/sign-pdf-preview`, `procurementpending/sign-pdf`
-  - Downloads: `procurementpending/download-rfq`, `procurementpending/download-award`, `procurementpending/download-attachment`
-
-- **Sign PDF preview (match image / position):**  
-  Sinusunod ang permission ng **sign-pdf-form** (o, kung may update-status-form, automatic na allowed).
-
----
-
-## Quick Reference: PDF Signer
-
-**Tanong:** *Paano ma-open ang PDF Signer sa role na BAC Secretariat?*
-
-**Sagot:**  
-1. I-allow ang permission na **`procurementpending/update-status-form`** sa role na **BAC Secretariat** (kung wala pa).  
-2. Logout at login ulit ang user.  
-3. Pumasok sa **Update Status** ng isang pending item, tapos gamitin ang **Open PDF Signer**.  
-Hindi na kailangan i-allow nang hiwalay ang `procurementpending/sign-pdf-form` kapag may **update-status-form** na.
-
----
-
-## Kung Ayaw Pa Rin (Troubleshooting)
-
-- **Logout at login** – permissions ay na-load sa session/cache.
-- **Clear cache:** `php artisan cache:clear` at `php artisan config:clear`.
-- **Double-check:** Sa **Permissions** list, filter by **Role** at tiyakin na naka-save talaga ang permission string (exact spelling at format: `module/action`, hal. `procurementpending/update-status-form`).
-- **Check role ng user:** Sa **Accounts → User** → tiyakin na tamang **Role** (hal. BAC Secretariat) ang naka-assign.
-
----
-
-*Huling update: batay sa Rbac at routes ng Procurement System.*
+*Format ng permission: `segment1/segment2` ng URL (lowercase). Hal. URL `procurementpending/sign-pdf-form/5` → permission `procurementpending/sign-pdf-form`.*
