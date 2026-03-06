@@ -6,6 +6,38 @@ User may permission naman. Goal: **i-verify sa online server** kung tugma ang co
 
 ---
 
+## Ano need mo i-COPY sa online (notes)
+
+Para tumugma ang behavior ng local sa online, **i-copy/ideploy** ang mga file na ito (same content as local):
+
+| # | Copy this file | Notes |
+|---|----------------|--------|
+| 1 | `routes/web.php` | Dapat may line: `Route::get('procurementpending/sign-pdf-matches/{rec_id}', ...)`. Copy buong file o at least tiyaking hindi na-overwrite ang route na ito. |
+| 2 | `app/Http/Middleware/Rbac.php` | Dapat kasama sa allow list ang `'procurementpending/sign-pdf-matches'` (line ~114). Copy buong file o yung block na `sign-pdf-match-image`, `sign-pdf-preview-position`, `sign-pdf-matches`. |
+| 3 | `app/Http/Controllers/ProcurementPdfSignController.php` | **Buong file** – dito naka-concentrate lahat ng logic (signPdfMatches, getLatestPdf, getPdftotextPath, computePdfMatches, etc.). Kung partial deploy, dapat same ang buong class. |
+| 4 | `public/js/page-scripts.js` | Dapat may block na nag-GET sa `data-sign-pdf-matches-url` (lines ~873–927). Copy buong file o yung debounce + AJAX part para sa `#search-text-input`. |
+| 5 | `resources/views/pages/procurementpending/sign-pdf.blade.php` | Dapat may `data-sign-pdf-matches-url="{{ route('procurementpending.sign-pdf-matches', $rec_id) }}"` sa section. Copy buong view o at least yung attribute na ito. |
+
+**Config / env (hindi file copy – i-set sa server):**
+
+- **.env (sa online):** Kung Linux, dagdag o i-verify: `PDFTOTEXT_PATH=/usr/bin/pdftotext` (o kung saan naka-install ang `pdftotext`). Sa Windows local puwede walang ganito kung naka-`storage/app/bin/pdftotext.exe` ka.
+- **Composer:** Sa online, `composer install` (o `composer update`) para siguradong naka-install ang `smalot/pdfparser` at lahat ng dependency ng controller.
+- **php.ini (sa online):** Siguraduhing **hindi** kasama sa `disable_functions` ang `proc_open` (kailangan ng `runPdftotext`).
+
+**Quick copy list (path lang):**
+
+```
+routes/web.php
+app/Http/Middleware/Rbac.php
+app/Http/Controllers/ProcurementPdfSignController.php
+public/js/page-scripts.js
+resources/views/pages/procurementpending/sign-pdf.blade.php
+```
+
+Pagkatapos i-copy, i-verify sa checklist sa Section 6 at kung may 500 pa, tingnan ang `storage/logs/laravel.log` (Section 6 item 6).
+
+---
+
 ## 1. Request na nag-fa-fail
 
 - **Method/URL:** `GET /procurementpending/sign-pdf-matches/{rec_id}?search_text=...`
