@@ -1,187 +1,181 @@
-# EPMS Critical Issues – Documentation of Changes
+# PDF Signer – Search/Matches 500 Error (Online) – Code Checklist
 
-Dokumentasyon ng mga pagbabagong ginawa batay sa **Critical Issues.txt** at **EPMS-Critical Issues.docx**. Lahat ng pagbabago ay nasa `app/Http/Controllers/ProcurementPendingController.php` maliban kung nakasaad.
-
----
-
-## 1. Path Traversal Risk sa `downloadAttachment()` (Critical)
-
-**Problema:** Validation gamit ang `strpos()` ay pwedeng ma-bypass; posible ang directory traversal.
-
-**Ano ang pinalitan / idinagdag:**
-
-| Lokasyon | Dating code / behavior | Bagong code / behavior |
-|----------|-------------------------|-------------------------|
-| Attachment path verification (foreach sa attachments) | Pag-compare: `strpos($normalizedFile, $normalizedInput) !== false \|\| strpos($normalizedInput, $normalizedFile) !== false` | **Tinanggal** ang partial substring match. Ngayon **exact path o basename lang**: `$normalizedFile === $normalizedInput \|\| basename($normalizedFile) === basename($normalizedInput)` |
-| Bago i-serve ang file | Walang realpath confinement; `public_path($attachmentPath)` lang | **Idinagdag:** `$realUploadDir = realpath(public_path(config('upload.attachments.upload_dir')))`, `$realFilePath = realpath($filePath)`. Kung `!$realFilePath` o path hindi nagsisimula sa `$realUploadDir` → `abort(403, 'Access denied.')` at log warning. |
-| Response | `response()->file($filePath, ...)` at `response()->download($filePath, ...)` | Ginagamit na ang **`$realFilePath`** (resolved path) sa lahat ng file serve/download. |
+Local: **working 100%**.  
+Online: **500 Internal Server Error** kapag nag-search sa "Text to check in PDF" (sign-pdf-matches).  
+User may permission naman. Goal: **i-verify sa online server** kung tugma ang code at config.
 
 ---
 
-## 2. `exec()` Calls na May User-Adjacent Data (Critical)
+## 1. Request na nag-fa-fail
 
-**Problema:** Paths na galing sa DB o user-uploaded filenames ay pwedeng maging command injection kung hindi properly escaped.
-
-**Ano ang napalitan:**
-
-- **Walang pinalitan sa structure** – ang code ay **naka-`escapeshellarg()` na** sa buong PowerShell command at may **`escapePathForShell()`** sa mga path bago i-interpolate sa script.
-- **Dinokumenta / sinigurado:** Lahat ng `exec()` sa RFQ/Award flow (`generateRfqFileToPath()`, `injectRfqSignatureIntoDocx()`) ay:
-  - Gumagamit ng `escapePathForShell($path)` para sa bawat path (PowerShell single-quote safe).
-  - Ang full PowerShell command string ay binalot sa `escapeshellarg()` bago ipasa sa `exec()`.
-- Kung may bagong path na idadagdag sa future, dapat gamitin pa rin ang `escapePathForShell()` at `escapeshellarg()`.
+- **Method/URL:** `GET /procurementpending/sign-pdf-matches/{rec_id}?search_text=...`
+- **Halimbawa:** `https://epms.primesys.dev/procurementpending/sign-pdf-matches/123?search_text=info`
+- **Handler:** `ProcurementPdfSignController@signPdfMatches`
 
 ---
 
-## 3. Double Permission Check sa `downloadRfqDoc()` at `downloadAwardDoc()` (Critical)
+## 2. Route – dapat pareho sa online
 
-**Problema:** Dalawang beses ang `canAccess()` check; redundant DB/cache overhead at pwedeng race condition.
+**File:** `routes/web.php`
 
-**Ano ang pinalitan:**
+- **Line ~90:**  
+  `Route::get('procurementpending/sign-pdf-matches/{rec_id}', 'ProcurementPdfSignController@signPdfMatches')->name('procurementpending.sign-pdf-matches');`
 
-| Method | Dating code | Bagong code |
-|--------|-------------|-------------|
-| `downloadRfqDoc()` | Unang check: `if (!$user->canAccess('procurementpending/download-rfq')) { ... }` → load `$pending` → **Pangalawang check:** `if (!$user->canAccess('procurementpending/download-rfq')) { return redirect()->back()... }` | **Tinanggal** ang pangalawang `canAccess('procurementpending/download-rfq')` block. Isang check na lang bago `findOrFail($rec_id)` at bago lahat ng file logic. |
-| `downloadAwardDoc()` | Same pattern: dalawang `canAccess('procurementpending/download-award')` | **Tinanggal** ang pangalawang check. Isang permission check na lang. |
+Tingnan sa online: same route definition at walang middleware na nag-block sa GET na ito.
 
 ---
 
-## 4. Signature Injection Logic – Brittle / Exploitable (High)
+## 3. Middleware (RBAC) – permission para sa sign-pdf-matches
 
-**Problema:** Hardcoded markers (e.g. "Chairperson, Bids and Awards Committee II") – kung may user-controlled content na naglalaman ng ganitong string, pwedeng maling position ang signature.
+**File:** `app/Http/Middleware/Rbac.php`
 
-**Ano ang idinagdag:**
+- **Line ~44–45:**  
+  `$page_path = strtolower("$page/$action");`  
+  Para sa URL na `.../procurementpending/sign-pdf-matches/123`, dapat `$page_path === 'procurementpending/sign-pdf-matches'`.
 
-| Lokasyon | Bagong logic |
-|----------|--------------|
-| `injectRfqSignatureIntoDocx()` (pagkatapos mahanap ang `$firstBlockPos`) | **Guard:** Kung ang unang occurrence ng marker ay nasa **unang 50%** ng dokumento (`$firstBlockPos < floor(strlen($documentXml) * 0.5)`), **hindi na mag-i-inject** – `return` agad. Ibig sabihin, kung may malicious/crafted text sa remarks/project title na nag-match sa marker sa itaas, hindi na gagamitin ang position na iyon. |
+- **Line ~114:**  
+  `} elseif (in_array($page_path, ['procurementpending/sign-pdf-match-image', 'procurementpending/sign-pdf-preview-position', 'procurementpending/sign-pdf-matches'], true)) {`
 
-*Note:* Ang marker-based logic (hanap ng "Chairperson, Bids and Awards Committee II" atbp.) ay nandyan pa rin; na-hardening lang para hindi mag-inject kapag ang match ay nasa unang kalahati ng doc.
+- **Line ~116–119:**  
+  Allow kung may: `sign-pdf-form` **OR** `update-status-form` **OR** `sign-pdf`.
 
----
-
-## 5. Unguarded `DB::raw()` Subquery sa `index()` at `myTasks()` (High)
-
-**Problema:** `DB::raw('(SELECT attachments FROM project_step_status pss WHERE ...)')` – kung may future na user input na idadagdag sa loob, bypass ang query binding.
-
-**Ano ang pinalitan:**
-
-| Method | Dating code | Bagong code |
-|--------|-------------|-------------|
-| `index()` | Sa `->select([..., DB::raw('(SELECT attachments FROM project_step_status pss WHERE pss.project_id = ... AND pss.step_id = ... ORDER BY pss.status_id DESC LIMIT 1) as current_step_attachments'), ...])` | **Tinanggal** ang `DB::raw(...)` mula sa `select([...])`. **Idinagdag** pagkatapos: `$query->selectSub(function($sub) { $sub->from('project_step_status as pss')->select('attachments')->whereColumn(...)->whereNotNull('pss.attachments')->where('pss.attachments','!=','')->orderByDesc('pss.status_id')->limit(1); }, 'current_step_attachments');` |
-| `myTasks()` | Same `DB::raw(...)` subquery | Same replacement: **selectSub()** na builder-based subquery. |
-
-Result: Same column `current_step_attachments`; wala nang raw string, safe kung magdagdag ng bound parameters later.
+Sa online: i-check na may isa sa tatlong permission ang user at na same ang string na `procurementpending/sign-pdf-matches` (typo-free).
 
 ---
 
-## 6. Hardcoded User/Designation IDs sa Complete Action (High)
+## 4. Controller – `signPdfMatches` at lahat ng tinatawag nito
 
-**Problema:** `'assigned_user' => 4`, `'assigned_desig_id' => 2` (BAC Sec) – kung mabago o ma-delete ang user ID 4, mali ang assignment.
+**File:** `app/Http/Controllers/ProcurementPdfSignController.php`
 
-**Ano ang pinalitan / idinagdag:**
+### 4.1 Entry point: `signPdfMatches`
 
-| Item | Dating code | Bagong code |
-|------|-------------|-------------|
-| **Bagong helper** | Wala | **`resolveBacSecretariatAssignment(): array`** – nag-query sa `user_tbl` ng unang active user na `user_role_id = 4`, kunin ang `user_id` at `designation_id`. Fallback sa `4` at `2` kung walang mahanap o may exception; may `Log::warning` kapag fallback. |
-| `updateStatus()` – payment step completion | `'assigned_user' => 4`, `'assigned_desig_id' => 2` sa pending item update at sa completion status | `$bacSecAssignment = $this->resolveBacSecretariatAssignment()` (called once sa simula ng try). Lahat ng `4` at `2` para sa BAC Sec ay pinalitan ng `$bacSecAssignment['user_id']` at `$bacSecAssignment['designation_id']`. |
-| Completion step status (update/create) | `assigned_desig_id => 2`, `assigned_user => 4` | Same: gamit `$bacSecAssignment['designation_id']`, `$bacSecAssignment['user_id']`. |
-| Movement records (payment completion at completion step) | `to_desig_id => 2`, `to_user => 4` | Same: `$bacSecAssignment['designation_id']`, `$bacSecAssignment['user_id']`. |
-| Auto-create next step (step_id == 2 fallback) | `$nextStepDesigId = 2`, `$nextStepUserId = 4` | `$nextStepDesigId = $bacSecAssignment['designation_id']`, `$nextStepUserId = $bacSecAssignment['user_id']`. |
-| Reversion (completion → payment) movement | `from_desig_id => 2`, `from_user => 4` | `$bacSecAssignment['designation_id']`, `$bacSecAssignment['user_id']`. |
+- **Lines 719–762** – buong method `signPdfMatches($rec_id)`:
+  - Auth check
+  - `userCanUseSignPdf($user)`
+  - `ProcurementPending::findOrFail($rec_id)`
+  - `getLatestPdf($pending)` → kung wala, JSON 404
+  - `getLatestPdfAttachment($pending, true)` → `$pdfPathForText`
+  - `request('search_text', '')`
+  - `computePdfMatches($pdfPathForText, $searchText)`
+  - `return response()->json(['matches' => $matches])`
 
----
+Kung 500, may **exception** sa loob ng flow na ito (auth/permission na lang 401/403, kaya 500 = PHP error).
 
-## 7. Silent File Upload Failures (Medium)
+### 4.2 Helpers na direktang ginagamit ng `signPdfMatches`
 
-**Problema:** Kapag nag-fail ang save ng attachment, naglo-log lang; user nakakakuha pa rin ng “success” message.
+| Method | Line(s) | Ginagawa |
+|--------|--------|----------|
+| `userCanUseSignPdf($user)` | 24–30 | Permission check (sign-pdf-form / update-status-form / sign-pdf) |
+| `getLatestPdf($pending)` | 162–169 | Kunin latest PDF; tumatawag sa `getLatestPdfAttachment` |
+| `getLatestPdfAttachment($pending, true)` | 129–155 | Latest PDF attachment, prefer unsigned; tumatawag sa `getAttachmentsFlatList`, `resolveAttachmentPath` |
+| `computePdfMatches($pdfPathForText, $searchText)` | 588–627 | Text match logic; tumatawag sa `extractPdfWordsBbox`, `normalizeText`, `findOccurrencesInPdfLayout` |
 
-**Ano ang pinalitan / idinagdag:**
+### 4.3 Path at config (mahalaga sa online)
 
-| Lokasyon | Dating code | Bagong code |
-|----------|-------------|-------------|
-| `updateStatus()` – file upload loop | `catch (Exception $e) { Log::error(...); // Continue with the process }` | **Idinagdag** `$attachmentErrors = []` bago ang loop. Sa catch: `$attachmentErrors[] = $file->getClientOriginalName();` (bukod sa existing `Log::error`). |
-| Bago `return $this->redirect(...)` (success path) | Walang check para sa failed uploads | **Idinagdag:** `if (!empty($attachmentErrors)) { session()->flash('warning', 'Item successfully ' . $actionText . ', but some attachments failed to upload. Please check the activity log for details.'); }` |
+- **resolveAttachmentPath($pathFromDb)** – **Lines 74–99**  
+  - Gumagamit ng `config('upload.attachments.upload_dir', 'uploads/attachments')`.  
+  - Sa online: dapat may `config/upload.php` (o kung saan naka-define ang `upload.attachments.upload_dir`) at tama ang path sa server (e.g. `public_path($c)` na naa-access ng web app).
 
----
+- **getLatestPdfAttachment** – **129–155**  
+  - Umaasa sa `ProjectStepStatus`, `getAttachmentsFlatList`, `resolveAttachmentPath`.  
+  - Kung ang path sa DB o filesystem ay mali sa server (e.g. Windows vs Linux, symlink, permissions), pwedeng mag-throw.
 
-## 8. Temp Files Left on Disk sa `injectRfqSignatureIntoDocx()` (Medium)
+### 4.4 PDF text extraction (madalas sanhi ng 500 sa server)
 
-**Problema:** Kung may exception pagkatapos i-extract pero bago ma-delete ang temp dir, naiiwan ang extracted directory.
+- **getPdftotextPath()** – **Lines 174–193**  
+  - `config('app.pdftotext_path')` o `env('PDFTOTEXT_PATH')`.  
+  - Fallback: `storage_path('app/bin/pdftotext.exe')`, `base_path('storage/app/bin/pdftotext.exe')` (Windows).  
+  - **Sa Linux server:** kadalasan walang `pdftotext.exe`. Dapat naka-set sa **.env** ang `PDFTOTEXT_PATH` (e.g. `/usr/bin/pdftotext`). Kung wala, `getPdftotextPath()` = null (hindi nag-throw).
 
-**Ano ang pinalitan:**
+- **extractPdfWordsBbox($pdfPath)** – **Lines 289–347**  
+  - Tumatawag sa `getPdftotextPath()`, `runPdftotext()`, `parseBboxHtml()`.  
+  - Kung `pdftotext` missing o failed: nagre-return ng `[]`, hindi 500.  
+  - Pwedeng mag-500 kung may **proc_open** restriction sa server o path/permission sa temp file.
 
-| Lokasyon | Dating code | Bagong code |
-|----------|-------------|-------------|
-| `injectRfqSignatureIntoDocx()` body (extract → edit → compress → delete) | Straight execution; `if (is_dir($extractDir)) { $this->deleteDirectory($extractDir); }` sa dulo | Buong block (extract, XML edit, compress) ay **binalot sa `try { ... } finally { ... }`**. Sa **`finally`**: `if (is_dir($extractDir)) { $this->deleteDirectory($extractDir); }`. Kahit mag-throw o maagang `return`, laging na-e-execute ang cleanup. |
+- **runPdftotext(array $args)** – **Lines 227–257**  
+  - Gumagamit ng `proc_open()`.  
+  - Sa online: i-check kung **disabled** ang `proc_open` sa `disable_functions` (php.ini). Kung disabled, dito mag-fail at 500.
 
----
+- **computePdfMatches** – **588–627**  
+  - Kung walang words mula sa bbox, tumatawag sa **findOccurrencesInPdfLayout**.
 
-## 9. `downloadAttachment()` Path Normalization (Medium)
+- **findOccurrencesInPdfLayout($pdfPath, $searchText)** – **Lines 535–577**  
+  - Tumatawag sa **extractPdfTextWithPhp($pdfPath)** – **Lines 384–421**.  
+  - Gumagamit ng **Smalot\PdfParser\Parser**.  
+  - **Sa online:** kung wala ang package na `smalot/pdfparser` o naka-different version, dito pwedeng mag-500 (class not found o exception).
 
-**Problema:** Path tulad ng `uploads/../../etc/passwd` ay pwedeng makapasok sa check dahil sa strpos at prefix logic.
+### 4.5 Imports / dependencies (top of controller)
 
-**Ano ang napalitan:**
-
-- **Verification logic:** Na-document na sa **#1** – tinanggal ang `strpos`-based match; exact path o basename na lang.
-- **Confinement:** Na-document na sa **#1** – `realpath()` at check na ang resolved path ay under `realpath(public_path(upload_dir))`. Kung hindi, 403 at log.
-
-Walang dagdag file dito; kasama na sa changes ng #1.
-
----
-
-## 10. Inconsistent Action Logging – Wrong Step Name (Low)
-
-**Problema:** Pagkatapos i-update ang `$pendingItem`, ang `$pendingItem->step_id` ay naka-point na sa *next* step; ang activity log ay nagre-record ng maling step name para sa “complete” action.
-
-**Ano ang pinalitan:**
-
-| Lokasyon | Dating code | Bagong code |
-|----------|-------------|-------------|
-| `updateStatus()` – simula ng try | Wala | **Idinagdag:** `$originalStepId = $pendingItem->step_id;` |
-| Pagkuha ng step para sa log (pagkatapos commit) | `$step = ProcurementSteps::find($pendingItem->step_id);` | **Pinalitan:** `$step = ProcurementSteps::find($originalStepId);` |
-| `ActivityLogHelper::log(..., 'step_id' => $pendingItem->step_id, ...)` | `step_id` = current (next) step | **Pinalitan:** `'step_id' => $originalStepId` |
-
-Result: Ang logged step ay yung step na na-complete / na-forward / na-return, hindi yung next step.
+- **Lines 1–17** – `use` statements at dependencies:  
+  `ProcurementPending`, `ProjectStepStatus`, `UserTbl`, `Auth`, `Log`, `setasign\Fpdi\Fpdi`, `Intervention\Image\*`, etc.  
+  Sa online: kung may missing class (e.g. Fpdi, Image, PdfParser), 500 sa early part ng request.
 
 ---
 
-## 11. `debugUserFiltering()` Exposed sa Production (High)
+## 5. Frontend – sino tumatawag sa sign-pdf-matches
 
-**Problema:** Endpoint na nagre-return ng user data (including designation) na accessible sa kahit sinong naka-login; enumeration/data exposure risk.
+**File:** `public/js/page-scripts.js`
 
-**Ano ang pinalitan:**
+- **Lines 873–927** – debounced `input` sa `#search-text-input`:
+  - `data-sign-pdf-matches-url` mula sa section (galing sa blade).
+  - `$.get(matchesUrl, { search_text: searchText })` → GET sa `.../sign-pdf-matches/{rec_id}?search_text=...`
 
-| Lokasyon | Dating code | Bagong code |
-|----------|-------------|-------------|
-| `debugUserFiltering()` – simula ng method | Direktang query at return ng JSON | **Idinagdag sa pinaka-una:** `$user = Auth::user(); if (!$user \|\| $user->user_role_id != 1 \|\| !config('app.debug')) { abort(404); }` |
+**File:** `resources/views/pages/procurementpending/sign-pdf.blade.php`
 
-Result: Endpoint ay naka-gate na sa: naka-login **at** admin (`user_role_id == 1`) **at** `app.debug == true`. Kung hindi, 404 (walang leak na may debug endpoint).
-
----
-
-## 12. ModSecurity / Apostrophe sa Filenames (Low)
-
-**Problema:** Apostrophe sa filename (e.g. "WOMEN'S MONTH") ay pwedeng mag-cause ng issue sa shell paths kung hindi properly quoted.
-
-**Ano ang naka-implement na (walang bagong file change para dito):**
-
-- Paths na pumapasok sa PowerShell commands ay dinaan na sa `escapePathForShell()` (apostrophe → `''`) at ang buong command ay naka-`escapeshellarg()`. Ito ay na-document na sa **#2**. Walang karagdagang code change para sa item na ito sa doc.
+- **Line ~5** – `data-sign-pdf-matches-url="{{ route('procurementpending.sign-pdf-matches', $rec_id) }}"`  
+  Dapat sa online same route name at `$rec_id` na naipapasa.
 
 ---
 
-## Buod – File at Method na Binago
+## 6. Checklist para i-check sa online (wag magpalit ng code, verify lang)
 
-| File | Methods / area na na-edit |
-|------|----------------------------|
-| `app/Http/Controllers/ProcurementPendingController.php` | `index()`, `myTasks()`, `downloadRfqDoc()`, `downloadAwardDoc()`, `downloadAttachment()`, `generateRfqFileToPath()` (fallback path), `injectRfqSignatureIntoDocx()`, `updateStatus()`, `debugUserFiltering()`; bagong helper: `resolveBacSecretariatAssignment()` |
+1. **Route**  
+   - [ ] `routes/web.php` line ~90: same `sign-pdf-matches/{rec_id}` route at controller method.
+
+2. **RBAC**  
+   - [ ] `app/Http/Middleware/Rbac.php` line ~114: kasama ang `'procurementpending/sign-pdf-matches'` sa `in_array`.  
+   - [ ] User may isa sa: `procurementpending/sign-pdf-form`, `procurementpending/update-status-form`, `procurementpending/sign-pdf`.
+
+3. **Controller**  
+   - [ ] `ProcurementPdfSignController.php` lines 719–762: same `signPdfMatches` logic.  
+   - [ ] Same helpers: `getLatestPdf`, `getLatestPdfAttachment`, `resolveAttachmentPath`, `getAttachmentsFlatList` (lines na binanggit sa section 4).
+
+4. **PDF tools (madalas sanhi ng 500)**  
+   - [ ] **.env:** may `PDFTOTEXT_PATH` ba (sa Linux, e.g. `/usr/bin/pdftotext`)?  
+   - [ ] **php.ini:** `disable_functions` – hindi kasama ang `proc_open` (para sa `runPdftotext`).  
+   - [ ] **Composer:** naka-install ang `smalot/pdfparser` (ginagamit ng `findOccurrencesInPdfLayout` → `extractPdfTextWithPhp`).
+
+5. **Paths at permissions**  
+   - [ ] `config('upload.attachments.upload_dir')` – tama at naa-access ng app sa server.  
+   - [ ] `storage_path('app/')` – writable (temp files ng pdftotext).  
+   - [ ] Actual PDF file path na binabasa – may read permission at same path format (Linux vs Windows).
+
+6. **Log para sa exact cause ng 500**  
+   - [ ] Sa server: `storage/logs/laravel.log` (o kung saan naka-log ang PHP errors).  
+   - Hanapin ang **stack trace** sa oras ng GET sa `sign-pdf-matches`.  
+   - Makikita kung: missing class, `proc_open` disabled, file not found, o permission.
 
 ---
 
-## Hindi (pa) Binago
+## 7. Summary – code locations (para tugma sa local)
 
-- **Refactor ng `updateStatus()` sa mas maliliit na private methods** – in-place improvements lang (BAC assignment, upload warnings, logging); walang extraction pa ng separate methods (e.g. `handleComplete`, `handleForward`) para iwas regression kung walang test suite.
-- **Iba pang controllers** – `PPMPController::downloadAttachment()`, `AnnualProcurementPlanController::downloadAttachment()` – hindi pa na-apply ang same `realpath()` confinement; pwedeng gawin sa susunod na pass kung gusto.
+| File | Location | Purpose |
+|------|----------|---------|
+| `routes/web.php` | ~line 90 | Route `sign-pdf-matches/{rec_id}` |
+| `app/Http/Middleware/Rbac.php` | ~44–45, 114, 116–119 | page_path at allow list para sign-pdf-matches |
+| `app/Http/Controllers/ProcurementPdfSignController.php` | 719–762 | `signPdfMatches($rec_id)` |
+| Same controller | 24–30 | `userCanUseSignPdf` |
+| Same controller | 74–99 | `resolveAttachmentPath` |
+| Same controller | 105–124 | `getAttachmentsFlatList` |
+| Same controller | 129–155 | `getLatestPdfAttachment` |
+| Same controller | 162–169 | `getLatestPdf` |
+| Same controller | 174–193 | `getPdftotextPath` |
+| Same controller | 227–257 | `runPdftotext` (proc_open) |
+| Same controller | 289–347 | `extractPdfWordsBbox` |
+| Same controller | 384–421 | `extractPdfTextWithPhp` (Smalot) |
+| Same controller | 535–577 | `findOccurrencesInPdfLayout` |
+| Same controller | 588–627 | `computePdfMatches` |
+| `public/js/page-scripts.js` | 873–927 | AJAX GET sign-pdf-matches |
+| `resources/views/pages/procurementpending/sign-pdf.blade.php` | ~line 5 | `data-sign-pdf-matches-url` |
 
----
-
-*Generated: 2025-03-02. Sanggunian: Critical Issues.txt, EPMS-Critical Issues.docx.*
+Kapag na-verify na tugma ang code at config sa online (lalo na route, RBAC, PDF path, proc_open, at smalot/pdfparser), gamitin ang **laravel.log** para sa exact exception at line number ng 500.
